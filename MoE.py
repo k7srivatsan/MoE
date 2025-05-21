@@ -16,6 +16,7 @@ class ExpertMLP(nn.Module):
         self.layers = nn.Sequential(
             nn.Linear(self.input_dim, self.hidden_dim),
             nn.ReLU(),
+            nn.Dropout(0.1),
             nn.Linear(self.hidden_dim, self.input_dim)
         )
 
@@ -25,7 +26,7 @@ class ExpertMLP(nn.Module):
 
 
 class MoE(nn.Module):
-    def __init__(self, sequence_length, input_dim, hidden_dim, num_experts, k, log_usage = True):
+    def __init__(self, sequence_length, input_dim, hidden_dim, num_experts, k, log_usage = True, soft = True):
         super(MoE, self).__init__()
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim 
@@ -48,51 +49,26 @@ class MoE(nn.Module):
 
         self.f = None
 
+        self.soft = soft
+
+    def eval(self):
+        self.soft = False
+        print("Topk routing")
+        return super().eval()
+
     # def positional_encoding():
     #     # positional embedding to add to x
 
     def get_load_balance(self):
         return self.f
-        
-    def forward(self, x):
-        B, T, C = x.shape
 
-        logits = self.router(x)
-        clean_logits = logits
-        
-        # if epoch != -1:
-        #     std = 0.01 * math.exp(-0.5 * epoch)
-        #     # 0.01e^{-0.5x}
-        #     logits += torch.randn_like(logits) * std # to encourage exploration
-
-
-        topk_vals, topk_indices = torch.topk(logits, self.k, dim = -1) # (B, T, k experts)
-
-        # lb_loss = self.compute_lb_loss(clean_logits, topk_indices)
-
-        # if epoch != -1: 
-        #     temperature = 1.0 * math.exp(-0.05 * epoch)
-        #     topk_vals = topk_vals / temperature
-
-        if self.log_usage:
-            with torch.no_grad():
-                for t in range(T):
-                    # t'th point in seqeunce, get expert histogram across batch
-                    t_indices = topk_indices[:, t, :]
-                    self.sequence_histogram[t] += torch.bincount(t_indices.flatten(), minlength = self.num_experts)
-
-
-        router_scores = nn.functional.softmax(topk_vals, dim = -1) # (B, t, k experts)
-
-        x_flat = x.view(-1, x.shape[-1]) # (B x T, C)
-        topk_indices_flat = topk_indices.view(-1, topk_indices.shape[-1]) # (B x T, k)
-        router_scores_flat = router_scores.view(-1, router_scores.shape[-1]) # (B x T, k)
-
+    def add_to_experts(self, x_flat, router_scores_flat, topk_indices_flat):
         expert_tokens = defaultdict(list)
         expert_weights = defaultdict(list)
         expert_positions = defaultdict(list)
-        
-        for i in range(self.k):
+
+        num_routed_experts = self.num_experts if self.soft else self.k
+        for i in range(num_routed_experts):
             ith_indices = topk_indices_flat[:, i]
             ith_router_score = router_scores_flat[:, i]
             
@@ -121,25 +97,72 @@ class MoE(nn.Module):
             expert_output = self.experts[expert](tokens) # (samples, input_dim)
             # weights is (samples, 1)
             output[positions] += torch.einsum("ij,i->ij", expert_output, weights)
+        
+        return expert_positions, output
 
+        
+    def forward(self, x):
+        B, T, C = x.shape
+
+        logits = self.router(x)
+        clean_logits = logits
+        
+        # if epoch != -1:
+        #     std = 0.01 * math.exp(-0.5 * epoch)
+        #     # 0.01e^{-0.5x}
+        #     logits += torch.randn_like(logits) * std # to encourage exploration
+
+
+        topk_vals, topk_indices = torch.topk(logits, self.k, dim = -1) # (B, T, k experts)
+
+        # lb_loss = self.compute_lb_loss(clean_logits, topk_indices)
+
+        # if epoch != -1: 
+        #     temperature = 1.0 * math.exp(-0.05 * epoch)
+        #     topk_vals = topk_vals / temperature
+
+        # this is for topk hard routing
+        if self.log_usage and not self.soft:
+            with torch.no_grad():
+                for t in range(T):
+                    # t'th point in seqeunce, get expert histogram across batch
+                    t_indices = topk_indices[:, t, :]
+                    self.sequence_histogram[t] += torch.bincount(t_indices.flatten(), minlength = self.num_experts)
+
+        # do soft assignment
+        if(self.soft):
+            topk_vals, topk_indices = clean_logits, torch.arange(self.num_experts).repeat(B, T, 1)
+
+        router_scores = nn.functional.softmax(topk_vals, dim = -1) # (B, t, k experts) 
+
+        x_flat = x.view(-1, x.shape[-1]) # (B x T, C)
+        topk_indices_flat = topk_indices.view(-1, topk_indices.shape[-1]) # (B x T, k)
+        router_scores_flat = router_scores.view(-1, router_scores.shape[-1]) # (B x T, k)
+
+        expert_positions, output = self.add_to_experts(x_flat, router_scores_flat, topk_indices_flat)
+        
         output = output.reshape((B, T, C))
-        return clean_logits, topk_indices, expert_tokens, output
+        return clean_logits, topk_indices, expert_positions, output
 
     def save_histogram(self, epoch):
         fig, ax = plt.subplots()
 
-        normalized_histogram = self.sequence_histogram / torch.sum(self.sequence_histogram, dim=1).unsqueeze(1)
-        normalized_histogram = normalized_histogram.detach().to('cpu')
+        # sequence_histogram is of size sequence_length * num_experts
+        dominant_expert = torch.argmax(self.sequence_histogram, dim = -1)
+        dominant_expert = dominant_expert.reshape(6, 6, -1)
+        dominant_expert = dominant_expert.detach().to('cpu')
 
-        pos = ax.imshow(normalized_histogram, cmap='viridis')
+        # normalized_histogram = self.sequence_histogram / torch.sum(self.sequence_histogram, dim=1).unsqueeze(1)
+        # normalized_histogram = normalized_histogram.detach().to('cpu')
 
-        ax.set_title("Experts chosen at each index in sequence")
-        ax.set_ylabel("Sequence Index")
-        ax.set_xlabel("Expert Distribution")
+        pos = ax.imshow(dominant_expert, cmap='viridis')
+
+        ax.set_title("Expert chosen at each window")
 
         fig.colorbar(pos, ax = ax)
         plt.savefig(f"histograms/MoE_epoch_{epoch}.png")
         plt.close()
+
 
     def reset_histogram(self, device):
         self.sequence_histogram = self.sequence_histogram.to(device)
