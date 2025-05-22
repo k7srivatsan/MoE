@@ -4,18 +4,19 @@ A minimal Mixture of Experts (MoE) model built from scratch in PyTorch, using pa
 
 ---
 
-## 🔧 Project Highlights
+## Project Highlights
 
-- ✅ Implements a custom **top-k MoE** architecture without HuggingFace
-- ✅ Uses **5×5 or 6×6 non-overlapping image patches** as routing tokens
-- ✅ Trains with **soft routing**, evaluates with **top-k expert selection**
-- ✅ Visualizes per-expert token prototypes and specialization
-- ✅ Tracks CE loss, load balancing loss, routing entropy
-- ✅ Logs runtime, memory, and routing behavior over epochs
+- Implements a custom **top-k MoE** architecture
+- Uses **5×5 image patches** as routing tokens
+- Trains with **soft routing**, evaluates with **top-k expert selection**
+- Visualizes per-expert token prototypes and specialization
+- Tracks CE loss, load balancing loss, routing entropy
+- Logs runtime, memory, and routing behavior over epochs
+- Easily modifiable for speech tokens
 
 ---
 
-## 🧠 Model Overview
+## Model Overview
 
 - **Input**: FashionMNIST image → patchify into 25–36 tokens (5×5 patches)
 - **Patch encoder**: 2-layer MLP (`25 → 64 → D`)
