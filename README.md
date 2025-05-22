@@ -40,7 +40,7 @@ Image --->  | Patchify → Patch Encoder    |  → Tokens (T, D)
              Token Outputs (sparse or weighted)
                             ↓
               Mean Pool → Classifier MLP → Prediction
-
+```
 Mean 5×5 patch routed to each expert (epoch 24)
 <p align="center"> <img src="results/expert_tokens_epoch_24.png" width="300"/> </p>
 Routing heatmap: which expert each patch in the image was routed to
