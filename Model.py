@@ -13,7 +13,7 @@ from losses.MoE_loss import MoELoss, MoELossOutput
 
 class Model(nn.Module):
 
-    def __init__(self, sequence_length, input_dim, hidden_dim, num_classes, input_mean, input_std):
+    def __init__(self, sequence_length, input_dim, hidden_dim, num_classes, input_mean, input_std, num_experts, top_k):
         super(Model, self).__init__()
 
         self.sequence_length = sequence_length
@@ -27,13 +27,14 @@ class Model(nn.Module):
             nn.Linear(64, self.D)
         )
 
-        self.moe = MoE(sequence_length = self.sequence_length, input_dim=self.D, hidden_dim=self.hidden_dim, num_experts=4, k = 1) 
+        self.moe = MoE(sequence_length = self.sequence_length, input_dim=self.D, hidden_dim=self.hidden_dim, num_experts=num_experts, k = top_k) 
         self.moe_loss = MoELoss(self.moe)
 
         self.classifier = nn.Sequential(
             nn.LayerNorm(self.D),
             nn.Linear(self.D, self.D),
             nn.GELU(),
+            nn.Dropout(0.1),
             nn.Linear(self.D, 10)
         )
         # self.linear = nn.Linear(input_dim, num_classes)
