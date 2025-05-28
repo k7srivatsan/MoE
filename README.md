@@ -52,7 +52,8 @@ Routing heatmap: which expert each patch in the image was routed to
 
 To run the model, simply type ```python train_model.py``` with optional arguments:
 - --num_experts
-- --soft_train
-            - This controls whether we use topk at training time. To use all experts when training, specify this to ```true```. This is true             by default  
+- --soft_train  
+  Controls whether to use top-k selection during training.  
+  Set to `true` to use **all** experts during training (default: `true`).
 - --top_k
 - --max_epochs
