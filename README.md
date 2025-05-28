@@ -42,9 +42,9 @@ Image --->  | Patchify → Patch Encoder    |  → Tokens (T, D)
               Mean Pool → Classifier MLP → Prediction
 ```
 Mean 5×5 patch routed to each expert (epoch 24)
-<p align="center"> <img src="results/expert_tokens_epoch_24.png" width="300"/> </p>
+<p align="center"> <img src="expert_tokens_epoch_4.png" width="300"/> </p>
 Routing heatmap: which expert each patch in the image was routed to
-<p align="center"> <img src="results/expert_assignment_map.png" width="300"/> </p>
+<p align="center"> <img src="MoE_epoch_4.png" width="300"/> </p>
 
 ---
 
